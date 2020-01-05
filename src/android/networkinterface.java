@@ -25,7 +25,11 @@ import java.net.Proxy.Type;
 import java.net.SocketException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.UnknownHostException;
 
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,10 +38,14 @@ import java.util.Map;
 import java.util.Enumeration;
 import java.util.logging.*;
 
+import java.io.IOException;
+
 public class networkinterface extends CordovaPlugin {
 	public static final String GET__WIFI_IP_ADDRESS="getWiFiIPAddress";
 	public static final String GET_CARRIER_IP_ADDRESS="getCarrierIPAddress";
 	public static final String GET_HTTP_PROXY_INFORMATION="getHttpProxyInformation";
+	public static final String GET_NETWORK_BROADCAST_ADDRESSES="getNetworkBroadcastAddresses";
+	public static final String GET_SEND_BROADCAST_MESSAGE="sendBroadcastMessage";
 	private static final String TAG = "cordova-plugin-networkinterface";
 
 	
@@ -51,6 +59,10 @@ public class networkinterface extends CordovaPlugin {
 				return extractIpInfo(getCarrierIPAddress(), callbackContext);
 			} else if(GET_HTTP_PROXY_INFORMATION.equals(action)) {
 				return getHttpProxyInformation(args.getString(0), callbackContext);
+			} else if(GET_NETWORK_BROADCAST_ADDRESSES.equals(action)) {
+				return getNetworkBroadcastAddresses(callbackContext);
+			} else if(GET_SEND_BROADCAST_MESSAGE.equals(action)) {
+				return sendBroadcastMessage(args, callbackContext);
 			}
 			callbackContext.error("Error no such method '" + action + "'");
 			return false;
@@ -179,5 +191,92 @@ public class networkinterface extends CordovaPlugin {
 		catch(Exception e){
 		}
 		return null;
+	}
+
+	private static boolean getNetworkBroadcastAddresses(CallbackContext callbackContext) throws SocketException {
+		try {
+			ArrayList<String> broadcastAddressesList = new ArrayList<String>();
+
+			Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+			while (interfaces.hasMoreElements()) 
+			{
+				NetworkInterface networkInterface = interfaces.nextElement();
+
+				if (networkInterface.isLoopback() || !networkInterface.isUp())
+					continue;	// Do not want to use the loopback interface.
+
+				for (InterfaceAddress interfaceAddress : networkInterface.getInterfaceAddresses()) 
+				{
+						InetAddress broadcast = interfaceAddress.getBroadcast();
+						if (broadcast == null)
+							continue;
+						
+						broadcastAddressesList.add(broadcast.getHostAddress());
+				}
+			}
+
+			String[] broadcastAddresses = broadcastAddressesList.toArray(new String[0]);
+
+			callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, new JSONArray(Arrays.asList(broadcastAddresses))));
+			return true;
+		}
+		catch (SocketException e) {
+			callbackContext.error("SocketException: " + e.getMessage());
+			return false;
+		}
+	}
+
+	/*
+	*	broadcastAddresses: [0] message, [1] port, [2,...,n] Broadcast IPs
+	*/
+	private boolean sendBroadcastMessage(JSONArray broadcastAddresses, CallbackContext callbackContext) throws JSONException, UnknownHostException, SocketException, IOException {
+		try {
+			InetAddress broadcast = null;
+			DatagramSocket socket = null;
+
+			byte[] buffer = ((String)broadcastAddresses.get(0)).getBytes();
+			int port = Integer.parseInt((String)broadcastAddresses.get(1));
+
+			if (port >= 0 && port <= 65535) {
+				for (int i = 2 ; i < broadcastAddresses.length(); i++) {
+					System.out.println("--- " + (String)broadcastAddresses.get(i));
+
+					broadcast = InetAddress.getByName((String)broadcastAddresses.get(i));
+
+					//byte[] buffer = new byte[1];
+
+					socket = new DatagramSocket();
+					socket.setBroadcast(true);
+
+					DatagramPacket packet = new DatagramPacket(buffer, buffer.length, broadcast, 20020);
+
+					socket.send(packet);
+					socket.close();
+				}
+
+				callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, true));
+				return true;
+			}
+			else {
+				callbackContext.error("Port Error: " + Integer.toString(port));
+				return false;
+			}
+		}
+		catch (JSONException e) {
+			callbackContext.error("JSONException: " + e.getMessage());
+			return false;
+		}
+		catch (UnknownHostException e) {
+			callbackContext.error("UnknownHostException: " + e.getMessage());
+			return false;
+		}
+		catch (SocketException e) {
+			callbackContext.error("SocketException: " + e.getMessage());
+			return false;
+		}
+		catch (IOException e) {
+			callbackContext.error("IOException: " + e.getMessage());
+			return false;
+		}
 	}
 }
