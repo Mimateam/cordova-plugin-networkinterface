@@ -5,7 +5,7 @@ Network interface information plugin for Cordova/PhoneGap that supports Android,
 ## Command Line Install
 
 ```sh
-cordova plugin add cordova-plugin-networkinterface
+cordova plugin add https://github.com/Mimateam/cordova-plugin-networkinterface
 ```
 
 ## PhoneGap Build
